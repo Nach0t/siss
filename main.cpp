@@ -49,6 +49,9 @@ public:
      */
     void push(T&& value) {
         std::unique_lock<std::mutex> lock(mtx);
+        if (queue.size() >= MAX_QUEUE_SIZE) {
+            queue.pop_front();
+        }
         queue.emplace_back(std::move(value));
         cv.notify_one();
     }
@@ -116,10 +119,6 @@ void imageProducer() {
     while (running.load(std::memory_order_relaxed)) {
         auto start = steady_clock::now();
         auto img = generateRandomImage();
-
-        while (imageQueue.size() >= MAX_QUEUE_SIZE && running.load(std::memory_order_relaxed)) {
-            std::this_thread::sleep_for(milliseconds(1));
-        }
 
         imageQueue.push(std::move(img));
         imagesGenerated.fetch_add(1, std::memory_order_relaxed);
@@ -193,6 +192,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (consumers > 7) {
+        std::cerr << "Error: El máximo permitido de hilos consumidores es 7 (8 hilos en total).\n";
+        return 1;
+    }
+
     DURATION_SECONDS = dur;
     TARGET_FPS = fps;
     NUM_CONSUMERS = consumers;
@@ -232,6 +236,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Total imágenes guardadas: " << imagesSaved.load() << "\n";
     std::cout << "Total datos escritos: " << totalBytesWritten.load() / (1024 * 1024) << " MB\n";
     std::cout << "FPS reales promedio: " << avgFps << "\n";
+    std::cout << "Imagenes pendientes en cola: " << imageQueue.size() << "\n";
     std::cout << "----------------\n";
 
     return 0;
